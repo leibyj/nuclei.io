@@ -350,19 +350,19 @@ class DataModel():
         x1, x2 = np.sort([x1, x2])
         y1, y2 = np.sort([y1, y2])
 
-        if hasattr(self.MainWindow, 'nucstat'):
-            # get all nuclei within ROI
-            index_bool = (self.MainWindow.nucstat.centroid[:,0] > x1) & (self.MainWindow.nucstat.centroid[:,0] < x2) & \
-                            (self.MainWindow.nucstat.centroid[:,1] > y1) & (self.MainWindow.nucstat.centroid[:,1] < y2)
+        # if hasattr(self.MainWindow, 'nucstat'):
+        #     # get all nuclei within ROI
+        #     index_bool = (self.MainWindow.nucstat.centroid[:,0] > x1) & (self.MainWindow.nucstat.centroid[:,0] < x2) & \
+        #                     (self.MainWindow.nucstat.centroid[:,1] > y1) & (self.MainWindow.nucstat.centroid[:,1] < y2)
 
-            self.MainWindow.nucstat.isSelected_to_VFC = index_bool
+        #     self.MainWindow.nucstat.isSelected_to_VFC = index_bool
 
         # the slide object: self.MainWindow.slide
         # the selected region: x1, x2, y1, y2
         selected_region = self.MainWindow.slide.read_region(location=(x1,y1), level=0, size=(x2-x1,y2-y1), as_array=True)
         
         # Convert numpy array to PIL Image
-        selected_region_pil = Image.fromarray(selected_region[..., :3])  # Remove alpha channel if present
+        selected_region_pil = Image.fromarray(selected_region[..., :3]) #TODO: edit ihc_utils.py to accept numpy array directly 
 
         print("Selected region shape: ", selected_region.shape)
         # @Jake: Now, given the selected_region, run IHC evaluation, return embeddding, dict of results.
@@ -372,7 +372,7 @@ class DataModel():
         # Run IHC inference
         checkpoint_weights_path = 'software/machine_learning/ihc_encoder_epoch_0_step_770882.pth'
         
-        ihc_results = ihc_inference(checkpoint_weights_path, selected_region_pil, cell_type, rle_mask=None)
+        ihc_stain_results, whole_region_embedding = ihc_inference(checkpoint_weights_path, selected_region_pil, cell_type, rle_mask=None)
 
         similar_weblinks = [
             {
@@ -386,10 +386,10 @@ class DataModel():
             # Add more similar results as needed
         ]
 
-        whole_region_embedding = np.random.rand(7*7, 512)
-        whole_region_results = {'staining_intensity': ihc_results['staining_intensity'],
-                                'staining_location': ihc_results['staining_location'],
-                                'staining_quantity': ihc_results['staining_quantity'],
+        # whole_region_embedding = np.random.rand(7*7, 512)
+        whole_region_results = {'staining_intensity': ihc_stain_results['staining_intensity'],
+                                'staining_location': ihc_stain_results['staining_location'],
+                                'staining_quantity': ihc_stain_results['staining_quantity'],
                                 'tissue_type': "Breast",
                                 'cancerous': 'cancer',
                                 'similar_weblinks': similar_weblinks,

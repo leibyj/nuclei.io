@@ -231,9 +231,7 @@ class CLAM_ViT(nn.Module):
         A_raw = torch.cat(A_raw_list, dim=0)
         M = torch.stack(M_list) # 16 x 50 x 768
 
-        M_single_token = M[:, 0, :] # CLS token 16 x 768
         M_single_token = torch.mean(M, dim=1) # Mean of all tokens 16 x 768
-        
 
         if phase == "train":
             # Introduce a random ratio to toggle the addition of query_features
@@ -267,10 +265,10 @@ class CLAM_ViT(nn.Module):
         intensity_out = outputs[0]
         location_out = outputs[1]
         quantity_out = outputs[2]
-        tissue_out = outputs[3]
-        malignancy_out = outputs[4]
+        # tissue_out = outputs[3]
+        # malignancy_out = outputs[4]
 
-        return intensity_out, location_out, quantity_out, tissue_out, malignancy_out, A_raw
+        return intensity_out, location_out, quantity_out, M_single_token #tissue_out, malignancy_out, A_raw
 
 
     # model = CLAM_ViT(base_model_name='openai/clip-vit-large-patch14-336', gate=True, size_arg="small", dropout=0.25,
@@ -505,33 +503,26 @@ def ihc_inference(checkpoint_weights_path, image_path, cell_type, rle_mask=None)
     print('cell_type: ', cell_type)
     model = create_ihc_model(checkpoint_weights_path, device)
 
-    dataset = SingleInferenceMILDataset(
+    data = SingleInferenceMILDataset(
         image_input=image_path,
         rle_mask=rle_mask,
         cell_type=cell_type,
         patch_size=336,
         processor=model.patch_processor,
     )
-
-    loader = DataLoader(
-        dataset,
-        batch_size=1,
-        collate_fn=custom_collate_fn_single,
-        shuffle=False
-    )
+    
+    processed_image, cell_type_one_hot = data[0]
 
     model.eval()
 
     with torch.no_grad():
-        for patches, cell_type_one_hot in loader:
-            # processed_image: shape [N, 3, 224, 224]
-            # cell_type_one_hot: shape [#cell_types]
-            # model forward expects a list
-            patches = [patches.to(device)]
-            cell_type_one_hot = cell_type_one_hot.to(device)
-            # None for query_input
-            with torch.cuda.amp.autocast():
-                intensity_out, location_out, quantity_out, _, _, _ = model(
-                    patches, None, cell_type_one_hot, phase="test")
-            
-            return prediction_summary(intensity_out, location_out, quantity_out)  # return logits
+        
+        processed_image = processed_image.to(device)
+        cell_type_one_hot = cell_type_one_hot.to(device)
+
+        # Model forward pass
+        with torch.cuda.amp.autocast():
+            intensity_out, location_out, quantity_out, region_embedding = model(
+                [processed_image], None, cell_type_one_hot, phase="test")
+        
+        return prediction_summary(intensity_out, location_out, quantity_out), region_embedding
