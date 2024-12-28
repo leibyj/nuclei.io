@@ -44,6 +44,8 @@ import platform
 import traceback
 opj = os.path.join
 
+from software.machine_learning.ihc_utils import ihc_inference
+
 
 class AsyncApplytoCase(QObject):
     finished = Signal()
@@ -358,10 +360,19 @@ class DataModel():
         # the slide object: self.MainWindow.slide
         # the selected region: x1, x2, y1, y2
         selected_region = self.MainWindow.slide.read_region(location=(x1,y1), level=0, size=(x2-x1,y2-y1), as_array=True)
+        
+        # Convert numpy array to PIL Image
+        selected_region_pil = Image.fromarray(selected_region[..., :3])  # Remove alpha channel if present
+
         print("Selected region shape: ", selected_region.shape)
         # @Jake: Now, given the selected_region, run IHC evaluation, return embeddding, dict of results.
         # below is fake output:
         # Run vector database search, get the closest top 10 matches in weblinks.
+
+        # Run IHC inference
+        checkpoint_weights_path = 'software/machine_learning/ihc_encoder_epoch_0_step_770882.pth'
+        
+        ihc_results = ihc_inference(checkpoint_weights_path, selected_region_pil, cell_type, rle_mask=None)
 
         similar_weblinks = [
             {
@@ -376,9 +387,9 @@ class DataModel():
         ]
 
         whole_region_embedding = np.random.rand(7*7, 512)
-        whole_region_results = {'staining_intensity': "moderate",
-                                'staining_location': "nuclear",
-                                'staining_quantity': random.choice(['none', '<25%', '25-75%', '>75%']),
+        whole_region_results = {'staining_intensity': ihc_results['staining_intensity'],
+                                'staining_location': ihc_results['staining_location'],
+                                'staining_quantity': ihc_results['staining_quantity'],
                                 'tissue_type': "Breast",
                                 'cancerous': 'cancer',
                                 'similar_weblinks': similar_weblinks,
