@@ -362,7 +362,7 @@ class DataModel():
         selected_region = self.MainWindow.slide.read_region(location=(x1,y1), level=0, size=(x2-x1,y2-y1), as_array=True)
         
         # Convert numpy array to PIL Image
-        selected_region_pil = Image.fromarray(selected_region[..., :3]) #TODO: edit ihc_utils.py to accept numpy array directly 
+        # selected_region_pil = Image.fromarray(selected_region[..., :3]) #TODO: edit ihc_utils.py to accept numpy array directly 
 
         print("Selected region shape: ", selected_region.shape)
         # @Jake: Now, given the selected_region, run IHC evaluation, return embeddding, dict of results.
@@ -372,8 +372,9 @@ class DataModel():
         # Run IHC inference
         checkpoint_weights_path = 'software/machine_learning/ihc_encoder_epoch_0_step_770882.pth'
         
-        ihc_stain_results, whole_region_embedding = ihc_inference(checkpoint_weights_path, selected_region_pil, cell_type, rle_mask=None)
+        ihc_stain_results, whole_region_embedding = ihc_inference(checkpoint_weights_path, selected_region, cell_type, rle_mask=None)
 
+        ### FAISS SEARCH AND RETURN TOP n RESULTS
         similar_weblinks = [
             {
                 'image_url': 'https://images.proteinatlas.org/60655/137304_B_7_5.jpg',
@@ -390,8 +391,8 @@ class DataModel():
         whole_region_results = {'staining_intensity': ihc_stain_results['staining_intensity'],
                                 'staining_location': ihc_stain_results['staining_location'],
                                 'staining_quantity': ihc_stain_results['staining_quantity'],
-                                'tissue_type': "Breast",
-                                'cancerous': 'cancer',
+                                'tissue_type': ihc_stain_results['tissue_type'],
+                                'cancerous': ihc_stain_results['malignancy'],
                                 'similar_weblinks': similar_weblinks,
                                 }
 

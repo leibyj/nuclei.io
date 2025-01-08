@@ -1,27 +1,3 @@
-# import torch
-# import os
-# from torch.utils.data import DataLoader
-
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# from transformers import AutoModel, AutoModelForZeroShotImageClassification, AutoProcessor, AutoConfig
-# import random
-# import torch
-# from torch.utils.data import Dataset
-# from PIL import Image
-# import tarfile
-# from io import BytesIO
-# import json
-# import os
-# import numpy as np
-# import mmap
-# import matplotlib.pyplot as plt
-# from torch.utils.data import Dataset, DataLoader, Sampler
-# from PIL import Image, ImageOps
-# from torchvision import transforms
-# import random
-# from torch.utils.data.distributed import DistributedSampler
 import torch
 from torch.utils.data import DataLoader, Dataset
 import torch.nn as nn
@@ -97,8 +73,7 @@ class Attn_Net(nn.Module):
 
 
 class CLAM_ViT(nn.Module):
-    def __init__(self, base_model_name, gate=True, size_arg="small", dropout=0.25, k_sample=8,
-                 device="cuda",
+    def __init__(self, base_model_name, gate=True, size_arg="small", dropout=0.25, k_sample=8, device="cuda",
                  freeze_vit=False, freeze_query_features_encoder=False, use_cell_type_embedding=False):
         super(CLAM_ViT, self).__init__()
 
@@ -136,11 +111,9 @@ class CLAM_ViT(nn.Module):
         size = size_dict[size_arg]
         
         if self.use_cell_type_embedding:
-            # Replace the Embedding layer with a Linear layer
             self.cell_type_projection = nn.Linear(39, self.visual_projection_dim) #
             self.cell_type_projection.to(self.device)
-            # self.wsi_vision_final_projection = nn.Linear(patch_dim, size[1])
-            # self.wsi_vision_final_projection.to(self.device)
+
         
         # Attention network (gated or non-gated)
         if gate:
@@ -169,20 +142,8 @@ class CLAM_ViT(nn.Module):
         self.l2_reg = 1e-5
 
     def forward(self, patches, query_input, cell_type_one_hot, phase="test"):
-
-        # patch_features_list = []
-        # patch_counts = []
-        # for ix, patch_tensor in enumerate(patches):
-        #     # Extract patch features using ViT
-        #     patch_outputs = self.patch_encoder.vision_model(patch_tensor, output_hidden_states=True)
-        #     patch_tokens = patch_outputs.hidden_states[-1]  # Accessing the last layer's hidden states
-        #     patch_features = self.visual_token_projection(patch_tokens)
-        #     patch_features_list.append(patch_features)
-        #     patch_counts.append(patch_features.shape[0])
-        # # patch_features_list: [torch.Size([115, 50, 768]), torch.Size([111, 50, 768]), ..., torch.Size([104, 50, 768])] # N patches x N tokens x feature dim
-
         # Process patches in smaller chunks to save memory
-        chunk_size = 32  # Adjust this value based on your GPU memory
+        chunk_size = 32 
         patch_features_list = []
         patch_counts = []
         
@@ -202,7 +163,6 @@ class CLAM_ViT(nn.Module):
             patch_features = torch.cat(chunk_features, dim=0)
             patch_features_list.append(patch_features)
             patch_counts.append(patch_features.shape[0])
-
 
         # Attention mechanism to weigh patch features
         A_list = []
@@ -265,50 +225,17 @@ class CLAM_ViT(nn.Module):
         intensity_out = outputs[0]
         location_out = outputs[1]
         quantity_out = outputs[2]
-        # tissue_out = outputs[3]
-        # malignancy_out = outputs[4]
+        tissue_out = outputs[3]
+        malignancy_out = outputs[4]
 
-        return intensity_out, location_out, quantity_out, M_single_token #tissue_out, malignancy_out, A_raw
-
-
-    # model = CLAM_ViT(base_model_name='openai/clip-vit-large-patch14-336', gate=True, size_arg="small", dropout=0.25,
-    #                  device="cpu",
-    #                  freeze_vit=False, freeze_query_features_encoder=False, use_cell_type_embedding=True)
+        return intensity_out, location_out, quantity_out, M_single_token, tissue_out, malignancy_out, A_raw
 
 ################################################################################
 ##                              dataset code                                  ##
 ################################################################################
 
 class SingleInferenceMILDataset(torch.utils.data.Dataset):
-    """
-    A minimal dataset for single-sample MIL inference.
-
-    You provide:
-      - A PIL image or path to an image
-      - An optional RLE mask if you want to apply the same logic as HPADatasetMIL
-      - The patch size
-      - The user-provided text metadata (tissue_name, snomed_text, cell_type, gene, etc.)
-      - A processor (e.g. CLIPProcessor, ViTFeatureExtractor, etc.) to transform patches
-      - Optional data_split to control whether we apply augmentations
-
-    This class returns the processed patches (stack of Tensors),
-    plus a few textual or embedding fields (query_input, cell_type_one_hot, etc.).
-    """
-    def __init__(
-        self,
-        image_input,
-        rle_mask=None,
-        cell_type="",
-        patch_size=336,
-        processor=None,
-    ):
-        """
-        image_input: either a path to an image or a PIL.Image object
-        rle_mask: optional run-length encoded mask string (matching HPADataset logic)
-        cell_type: name of cell type of interest, should be in list of known cell types...
-        patch_size: size of each patch (int)
-        processor: the huggingface/CLIP processor or similar used to process each patch
-        """
+    def __init__(self, image_input, rle_mask=None, cell_type="", patch_size=336, processor=None):
         super().__init__()
         self.patch_size = patch_size
         self.processor = processor
@@ -319,7 +246,8 @@ class SingleInferenceMILDataset(torch.utils.data.Dataset):
         if isinstance(image_input, str):
             self.image = Image.open(image_input).convert("RGB")
         else:
-            self.image = image_input.convert("RGB")
+            # self.image = image_input.convert("RGB")
+            self.image = Image.fromarray(image_input[..., :3]).convert("RGB")
 
     def __len__(self):
         return 1
@@ -462,25 +390,45 @@ def custom_collate_fn_single(batch):
     return batch[0]  # i.e. (processed_image, cell_type_one_hot)
 
 
-def prediction_summary(intensity_out, location_out, quantity_out):
+def prediction_summary(intensity_out, location_out, quantity_out, tissue_out, malignancy_out):
     
     intensity_idx = torch.argmax(intensity_out, dim=1).item()
     location_idx  = torch.argmax(location_out, dim=1).item()
     quantity_idx  = torch.argmax(quantity_out, dim=1).item()
+    tissue_idx = torch.argmax(tissue_out, dim=1).item()
+    malignancy_idx = torch.argmax(malignancy_out, dim=1).item()
 
     intensity_map = ['negative', 'weak', 'moderate', 'strong']
     location_map  = ['none', 'cytoplasmic/membranous', 'nuclear', 'cytoplasmic/membranous,nuclear']
     quantity_map  = ['none', '<25%', '25%-75%', '>75%']
-
+    tissue_map = ['adipose', 'adrenal gland', 'appendix', 'bone marrow', 'breast',
+                        'bronchus', 'carcinoid', 'caudate', 'cerebellum',
+                        'cerebral cortex', 'cervical', 'cervix', 'colon', 'colorectal',
+                        'duodenum', 'endometrial', 'endometrium', 'epididymis',
+                        'esophagus', 'fallopian tube', 'gallbladder', 'glioma',
+                        'head and neck', 'heart muscle', 'hippocampus', 'kidney', 'liver',
+                        'lung', 'lymph node', 'lymphoma', 'melanoma', 'nasopharynx',
+                        'oral mucosa', 'ovarian', 'ovary', 'pancreas', 'pancreatic',
+                        'parathyroid gland', 'placenta', 'prostate', 'rectum', 'renal',
+                        'salivary gland', 'seminal vesicle', 'skeletal muscle', 'skin',
+                        'small intestine', 'smooth muscle', 'soft', 'spleen', 'stomach',
+                        'testis', 'thyroid', 'thyroid gland', 'tonsil', 'urinary bladder',
+                        'urothelial', 'vagina']
+    malignancy_map = ['normal', 'cancer']
+    
 
     intensity_label = intensity_map[intensity_idx]
     location_label  = location_map[location_idx]
     quantity_label  = quantity_map[quantity_idx]
+    tissue_label = tissue_map[tissue_idx]
+    malignancy_label = malignancy_map[malignancy_idx]
 
     return {
         'staining_intensity': intensity_label,
         'staining_location': location_label, 
-        'staining_quantity': quantity_label
+        'staining_quantity': quantity_label,
+        'tissue_type': tissue_label,
+        'malignancy': malignancy_label  
     }
 
 
@@ -510,7 +458,7 @@ def ihc_inference(checkpoint_weights_path, image_path, cell_type, rle_mask=None)
         patch_size=336,
         processor=model.patch_processor,
     )
-    
+
     processed_image, cell_type_one_hot = data[0]
 
     model.eval()
@@ -522,7 +470,7 @@ def ihc_inference(checkpoint_weights_path, image_path, cell_type, rle_mask=None)
 
         # Model forward pass
         with torch.cuda.amp.autocast():
-            intensity_out, location_out, quantity_out, region_embedding = model(
+            intensity_out, location_out, quantity_out, region_embedding, tissue_out, malignancy_out, A_raw = model(
                 [processed_image], None, cell_type_one_hot, phase="test")
         
-        return prediction_summary(intensity_out, location_out, quantity_out), region_embedding
+        return prediction_summary(intensity_out, location_out, quantity_out, tissue_out, malignancy_out), region_embedding
