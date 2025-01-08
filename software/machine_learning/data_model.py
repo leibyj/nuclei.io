@@ -44,7 +44,7 @@ import platform
 import traceback
 opj = os.path.join
 
-from software.machine_learning.ihc_utils import ihc_inference
+from software.machine_learning.ihc_utils_faiss import ihc_inference
 
 
 class AsyncApplytoCase(QObject):
@@ -372,20 +372,19 @@ class DataModel():
         # Run IHC inference
         checkpoint_weights_path = 'software/machine_learning/ihc_encoder_epoch_0_step_770882.pth'
         
-        ihc_stain_results, whole_region_embedding = ihc_inference(checkpoint_weights_path, selected_region, cell_type, rle_mask=None)
+        ihc_stain_results, whole_region_embedding, similar_weblinks = ihc_inference(checkpoint_weights_path, selected_region, cell_type, rle_mask=None)
 
-        ### FAISS SEARCH AND RETURN TOP n RESULTS
-        similar_weblinks = [
-            {
-                'image_url': 'https://images.proteinatlas.org/60655/137304_B_7_5.jpg',
-                'page_url': 'https://www.proteinatlas.org/ENSG00000111602-TIMELESS/tissue/cerebral+cortex#img'
-            },
-            {
-                'image_url': 'https://images.proteinatlas.org/3387/11301_B_6_3.jpg', 
-                'page_url': 'https://www.proteinatlas.org/ENSG00000170312-CDK1/cancer/pancreatic+cancer#img'
-            },
-            # Add more similar results as needed
-        ]
+        # similar_weblinks = [
+        #     {
+        #         'image_url': 'https://images.proteinatlas.org/60655/137304_B_7_5.jpg',
+        #         'page_url': 'https://www.proteinatlas.org/ENSG00000111602-TIMELESS/tissue/cerebral+cortex#img'
+        #     },
+        #     {
+        #         'image_url': 'https://images.proteinatlas.org/3387/11301_B_6_3.jpg', 
+        #         'page_url': 'https://www.proteinatlas.org/ENSG00000170312-CDK1/cancer/pancreatic+cancer#img'
+        #     },
+        #     # Add more similar results as needed
+        # ]
 
         # whole_region_embedding = np.random.rand(7*7, 512)
         whole_region_results = {'staining_intensity': ihc_stain_results['staining_intensity'],
