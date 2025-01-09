@@ -10,6 +10,7 @@ from torchvision import transforms
 import faiss
 import pickle
 import os
+from skimage import morphology, filters
 
 ################################################################################
 ##                              model code                                    ##
@@ -238,19 +239,40 @@ class CLAM_ViT(nn.Module):
 ################################################################################
 
 class SingleInferenceMILDataset(torch.utils.data.Dataset):
-    def __init__(self, image_input, rle_mask=None, cell_type="", patch_size=336, processor=None):
+    def __init__(self, image_input, cell_type="", patch_size=336, processor=None, mask_threshold=0.8):
         super().__init__()
         self.patch_size = patch_size
         self.processor = processor
-        self.rle_mask = rle_mask
         self.cell_type = cell_type
+        self.mask_threshold = mask_threshold
+        self.image = Image.fromarray(image_input[..., :3]).convert("RGB")
+        self.mask = self.simple_get_mask()
 
-        # 1. Load/Store the image
-        if isinstance(image_input, str):
-            self.image = Image.open(image_input).convert("RGB")
-        else:
-            # self.image = image_input.convert("RGB")
-            self.image = Image.fromarray(image_input[..., :3]).convert("RGB")
+    def simple_get_mask(self):
+        try:
+            # Convert image to grayscale
+            gray_image = ImageOps.grayscale(self.image)
+            gray_array = np.array(gray_image)
+
+            # Apply Otsu's threshold
+            threshold = filters.threshold_otsu(gray_array)
+            binary_mask = gray_array < threshold
+            print(binary_mask.mean())
+            # Remove small objects and holes
+            binary_mask = morphology.remove_small_objects(binary_mask, min_size=16 * 16, connectivity=2)
+            binary_mask = morphology.remove_small_holes(binary_mask, area_threshold=128 * 128)
+
+            # Apply binary dilation
+            binary_mask = morphology.binary_dilation(binary_mask, morphology.disk(16))
+            # Print value counts for binary mask
+            unique, counts = np.unique(binary_mask, return_counts=True)
+            print("mean of binary mask: ", binary_mask.mean())
+            print("Binary mask value counts:", dict(zip(unique, counts)))
+            # Convert to uint8
+            return (binary_mask * 255).astype(np.uint8)
+        except Exception as e:
+            print(f"Error generating mask: {e}")
+            return None
 
     def __len__(self):
         return 1
@@ -262,7 +284,7 @@ class SingleInferenceMILDataset(torch.utils.data.Dataset):
           cell_type_one_hot (Tensor) - if you use cell_type embedding
         """
         # crop patches
-        patches = self._crop_into_patches(self.image, self.rle_mask)
+        patches = self._crop_into_patches(self.image)
 
         # process patches
         processed_patches = []
@@ -310,23 +332,18 @@ class SingleInferenceMILDataset(torch.utils.data.Dataset):
 
         return processed_image, cell_type_one_hot
 
-    def _crop_into_patches(self, image, rle_mask=None):
+    def _crop_into_patches(self, image):
         """
         Splits the image into patches of size patch_size.
-        If rle_mask is provided, skip patches with <10% coverage in the mask.
         """
         width, height = image.size
         grid_size_x = int(np.ceil(width / self.patch_size))
         grid_size_y = int(np.ceil(height / self.patch_size))
 
-        # Decode mask if provided
-        if rle_mask is not None:
-            mask = self._rle_decode(rle_mask, (width, height))
-        else:
-            # If no mask, treat everything as valid
-            mask = np.ones((height, width), dtype=np.uint8)
-
         patches = []
+        total_patches = 0
+        skipped_patches = 0
+
         for i in range(grid_size_y):
             for j in range(grid_size_x):
                 left = j * self.patch_size
@@ -338,18 +355,25 @@ class SingleInferenceMILDataset(torch.utils.data.Dataset):
                     continue
 
                 patch = image.crop((left, top, right, bottom))
+                patch_mask = self.mask[top:bottom, left:right]
+
+                # Calculate the background percentage
+                background_percentage = np.mean(patch_mask == 0)
+
+                # Ignore patch if background exceeds threshold
+                if background_percentage > self.mask_threshold:
+                    print(f"Skipping patch due to background percentage: {background_percentage}")
+                    skipped_patches += 1
+                    continue
 
                 # Pad if needed
                 if patch.size != (self.patch_size, self.patch_size):
                     patch = self._pad_patch(patch, target_size=self.patch_size, fill="white")
 
-                # Evaluate mask coverage
-                patch_mask = mask[top:bottom, left:right]
-                mask_area = patch_mask.shape[0] * patch_mask.shape[1]
-                coverage = np.sum(patch_mask) / mask_area
-                if coverage >= 0.1:
-                    patches.append(patch)
+                patches.append(patch)
+                total_patches += 1
 
+        print(f"Total patches: {total_patches + skipped_patches}, Skipped patches: {skipped_patches}")
         return patches
 
     def _pad_patch(self, patch, target_size, fill="white"):
@@ -509,17 +533,23 @@ def search_similar_images(embedding, index, metadata, k=5):
     
     return results
 
-def ihc_inference(model, image_path, cell_type, rle_mask=None):
+def ihc_inference(model, image_path, cell_type):
 
     print('cell_type: ', cell_type)
 
     data = SingleInferenceMILDataset(
         image_input=image_path,
-        rle_mask=rle_mask,
         cell_type=cell_type,
         patch_size=336,
         processor=model.patch_processor,
     )
+
+    if data.mask is None:
+        print("The mask is not usable. Please try a different image.")
+        return None  
+    if data[0] is None:
+        print("No valid patches could be extracted (all background). Invalid image.")
+        return None
 
     processed_image, cell_type_one_hot = data[0]
 

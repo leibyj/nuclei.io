@@ -356,6 +356,8 @@ class DataModel():
         x1, x2 = np.sort([x1, x2])
         y1, y2 = np.sort([y1, y2])
 
+        #TODO: If region is too large, model will crash.
+
         # if hasattr(self.MainWindow, 'nucstat'):
         #     # get all nuclei within ROI
         #     index_bool = (self.MainWindow.nucstat.centroid[:,0] > x1) & (self.MainWindow.nucstat.centroid[:,0] < x2) & \
@@ -366,45 +368,57 @@ class DataModel():
         # the slide object: self.MainWindow.slide
         # the selected region: x1, x2, y1, y2
         selected_region = self.MainWindow.slide.read_region(location=(x1,y1), level=0, size=(x2-x1,y2-y1), as_array=True)
-        
-        # Convert numpy array to PIL Image
-        # selected_region_pil = Image.fromarray(selected_region[..., :3]) #TODO: edit ihc_utils.py to accept numpy array directly 
+
 
         print("Selected region shape: ", selected_region.shape)
         # @Jake: Now, given the selected_region, run IHC evaluation, return embeddding, dict of results.
         # below is fake output:
         # Run vector database search, get the closest top 10 matches in weblinks.
 
-        # Run IHC inference
-        ihc_stain_results, whole_region_embedding, similar_weblinks = ihc_inference(self.ihc_model, selected_region, cell_type, rle_mask=None)
+        try:
+            # Run IHC inference
+            result = ihc_inference(self.ihc_model, selected_region, cell_type)
+            
+            if result is None:
+                error_results = {
+                    'error': True,
+                    'message': 'No valid tissue patches could be extracted from the selected region. Please select a region containing tissue.',
+                    'similar_weblinks': []  # Empty list to prevent frontend errors
+                }
+                dict2send = {"action": "show_IHC_evaluation_result",
+                            "data": error_results}
+                self.MainWindow.backend.py2js(dict2send)
+                print("IHC evaluation failed: No valid patches found")
+                return
 
-        # similar_weblinks = [
-        #     {
-        #         'image_url': 'https://images.proteinatlas.org/60655/137304_B_7_5.jpg',
-        #         'page_url': 'https://www.proteinatlas.org/ENSG00000111602-TIMELESS/tissue/cerebral+cortex#img'
-        #     },
-        #     {
-        #         'image_url': 'https://images.proteinatlas.org/3387/11301_B_6_3.jpg', 
-        #         'page_url': 'https://www.proteinatlas.org/ENSG00000170312-CDK1/cancer/pancreatic+cancer#img'
-        #     },
-        #     # Add more similar results as needed
-        # ]
+            ihc_stain_results, whole_region_embedding, similar_weblinks = result
 
-        # whole_region_embedding = np.random.rand(7*7, 512)
-        whole_region_results = {'staining_intensity': ihc_stain_results['staining_intensity'],
-                                'staining_location': ihc_stain_results['staining_location'],
-                                'staining_quantity': ihc_stain_results['staining_quantity'],
-                                'tissue_type': ihc_stain_results['tissue_type'],
-                                'cancerous': ihc_stain_results['malignancy'],
-                                'similar_weblinks': similar_weblinks,
-                                }
+            # If successful, send results to frontend
+            whole_region_results = {
+                'error': False,
+                'staining_intensity': ihc_stain_results['staining_intensity'],
+                'staining_location': ihc_stain_results['staining_location'],
+                'staining_quantity': ihc_stain_results['staining_quantity'],
+                'tissue_type': ihc_stain_results['tissue_type'],
+                'cancerous': ihc_stain_results['malignancy'],
+                'similar_weblinks': similar_weblinks if similar_weblinks else []
+            }
 
-        
-        print('IHC evaluation done.')
-        # Finally, send the evaluation result to the web engine for visualization.
-        dict2send = {"action": "show_IHC_evaluation_result",
-                     "data": whole_region_results}
-        self.MainWindow.backend.py2js(dict2send) # send total nuclei count, active nuclei count, accuracy, etc.
+            dict2send = {"action": "show_IHC_evaluation_result",
+                         "data": whole_region_results}
+            self.MainWindow.backend.py2js(dict2send)
+            print("IHC evaluation completed successfully")
+
+        except Exception as e:
+            print('IHC evaluation error:', str(e))
+            error_results = {
+                'error': True,
+                'message': f'An error occurred during IHC evaluation: {str(e)}',
+                'similar_weblinks': []  # Empty list to prevent frontend errors
+            }
+            dict2send = {"action": "show_IHC_evaluation_result",
+                         "data": error_results}
+            self.MainWindow.backend.py2js(dict2send)
 
         # clear drawing
         pixmap = QPixmap(self.MainWindow.ui.DrawingOverlay.size())
