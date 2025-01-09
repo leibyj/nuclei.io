@@ -6,9 +6,6 @@ dist
 /example_data
 /.vscode
 
-# PyTorch
-*.pth
-
 # Log
 *.log
 *.log.*
