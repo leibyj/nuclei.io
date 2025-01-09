@@ -4,4 +4,4 @@ experimental_data/**/*.csv filter=lfs diff=lfs merge=lfs -text
 experimental_data/**/*.tiff filter=lfs diff=lfs merge=lfs -text
 experimental_data/**/*.pkl filter=lfs diff=lfs merge=lfs -text
 feature_pre-calculation/**/*.torchmdl filter=lfs diff=lfs merge=lfs -text
-
+software/machine_learning/ihc_encoder_epoch_0_step_770882.pth filter=lfs diff=lfs merge=lfs -text
