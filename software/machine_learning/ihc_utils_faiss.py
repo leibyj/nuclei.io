@@ -435,7 +435,8 @@ def prediction_summary(intensity_out, location_out, quantity_out, tissue_out, ma
     }
 
 
-def create_ihc_model(checkpoint_weights_path, device):
+def create_ihc_model(checkpoint_weights_path):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")   
     model = CLAM_ViT(base_model_name='openai/clip-vit-large-patch14-336', gate=True, size_arg="small", dropout=0.25,
                      device="cpu",
                      freeze_vit=False, freeze_query_features_encoder=False, use_cell_type_embedding=True)
@@ -508,12 +509,9 @@ def search_similar_images(embedding, index, metadata, k=5):
     
     return results
 
-def ihc_inference(checkpoint_weights_path, image_path, cell_type, rle_mask=None):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def ihc_inference(model, image_path, cell_type, rle_mask=None):
 
-    print("Loading IHC model...")
     print('cell_type: ', cell_type)
-    model = create_ihc_model(checkpoint_weights_path, device)
 
     data = SingleInferenceMILDataset(
         image_input=image_path,
@@ -525,6 +523,7 @@ def ihc_inference(checkpoint_weights_path, image_path, cell_type, rle_mask=None)
 
     processed_image, cell_type_one_hot = data[0]
 
+    device = model.device
     model.eval()
 
     with torch.no_grad():

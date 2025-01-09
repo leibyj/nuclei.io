@@ -44,7 +44,7 @@ import platform
 import traceback
 opj = os.path.join
 
-from software.machine_learning.ihc_utils_faiss import ihc_inference
+from software.machine_learning.ihc_utils_faiss import create_ihc_model, ihc_inference
 
 
 class AsyncApplytoCase(QObject):
@@ -74,6 +74,8 @@ class DataModel():
     activeClassName = None
     activeClassRGB = None
     force_update_ML = True
+
+    ihc_model = None
 
     data_X = None
     data_info = None
@@ -337,6 +339,10 @@ class DataModel():
                        additional_info=None,
                        ):
         print('Start INTERPRET IHC ROI.')
+        if self.ihc_model is None:
+            checkpoint_weights_path = 'software/machine_learning/ihc_encoder_epoch_0_step_770882.pth'
+            print('Loading IHC model...')
+            self.ihc_model = create_ihc_model(checkpoint_weights_path)
 
         ROI_type = annotation_dict['type']
         ROI_points = annotation_dict['points']
@@ -370,9 +376,7 @@ class DataModel():
         # Run vector database search, get the closest top 10 matches in weblinks.
 
         # Run IHC inference
-        checkpoint_weights_path = 'software/machine_learning/ihc_encoder_epoch_0_step_770882.pth'
-        
-        ihc_stain_results, whole_region_embedding, similar_weblinks = ihc_inference(checkpoint_weights_path, selected_region, cell_type, rle_mask=None)
+        ihc_stain_results, whole_region_embedding, similar_weblinks = ihc_inference(self.ihc_model, selected_region, cell_type, rle_mask=None)
 
         # similar_weblinks = [
         #     {
