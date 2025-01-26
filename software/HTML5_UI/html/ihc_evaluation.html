@@ -7,6 +7,12 @@
           <h5 class="card-title mb-0">IHC Evaluation Results</h5>
         </div>
         <div class="card-body">
+          <!-- Add attention map visualization -->
+          <div class="mb-4">
+            <h6>Attention Map</h6>
+            <img id="attention_map" class="img-fluid" alt="Attention map">
+          </div>
+          
           <table class="table table-bordered">
             <tbody>
               <tr>
@@ -20,14 +26,6 @@
               <tr>
                 <th scope="row">Staining Quantity</th>
                 <td id="staining_quantity">-</td>
-              </tr>
-              <tr>
-                <th scope="row">Tissue Type</th>
-                <td id="tissue_type">-</td>
-              </tr>
-              <tr>
-                <th scope="row">Cancer Status</th>
-                <td id="cancer_status">-</td>
               </tr>
             </tbody>
           </table>
@@ -58,8 +56,11 @@ function updateIHCEvaluationResults(data) {
   $('#staining_intensity').text(data.staining_intensity);
   $('#staining_location').text(data.staining_location);
   $('#staining_quantity').text(data.staining_quantity);
-  $('#tissue_type').text(data.tissue_type);
-  $('#cancer_status').text(data.cancerous);
+  
+  // Update attention map
+  if (data.attention_map) {
+    $('#attention_map').attr('src', data.attention_map);
+  }
 
   // Clear and update similar cases
   const similarCasesContainer = $('#similar_cases_container');
@@ -106,5 +107,13 @@ if (jsonObj['action'] == 'show_IHC_evaluation_result') {
 #similar_cases_container img {
   height: 200px;
   object-fit: cover;
+}
+
+/* Add styles for attention map */
+#attention_map {
+  max-width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 1rem;
 }
 </style>

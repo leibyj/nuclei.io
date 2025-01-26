@@ -196,7 +196,16 @@ class IHC_Evaulation_Dialog:
         # Add some spacing between header and content
         layout.addSpacing(20)
 
-        # Tissue type selection
+        # Cell type selection (moved before tissue type)
+        cell_layout = QHBoxLayout()
+        cell_label = QLabel("Cell type:")
+        cell_combo = QComboBox()
+        cell_combo.addItems(self.cell_type_list)
+        cell_layout.addWidget(cell_label)
+        cell_layout.addWidget(cell_combo)
+        layout.addLayout(cell_layout)
+
+        # Tissue type selection (moved after cell type)
         tissue_layout = QHBoxLayout()
         tissue_label = QLabel("Tissue type:")
         tissue_combo = QComboBox()
@@ -212,23 +221,6 @@ class IHC_Evaulation_Dialog:
         tissue_layout.addWidget(tissue_combo)
         tissue_layout.addWidget(tissue_input)
         layout.addLayout(tissue_layout)
-
-        # Cell type selection
-        cell_layout = QHBoxLayout()
-        cell_label = QLabel("Cell type:")
-        cell_combo = QComboBox()
-        cell_combo.addItems(self.cell_type_list)
-        cell_input = QPlainTextEdit()
-        cell_input.setMaximumHeight(30)
-        cell_input.setPlaceholderText("or type manually")
-        # Set placeholder text color to gray
-        palette = cell_input.palette()
-        palette.setColor(QPalette.PlaceholderText, QColor("#808080"))
-        cell_input.setPalette(palette)
-        cell_layout.addWidget(cell_label)
-        cell_layout.addWidget(cell_combo)
-        cell_layout.addWidget(cell_input)
-        layout.addLayout(cell_layout)
 
         # Antibody name
         antibody_label = QLabel("Antibody (gene) name (optional):")
@@ -265,8 +257,8 @@ class IHC_Evaulation_Dialog:
 
         if dialog.exec() == QDialog.Accepted:
             # Get the selected/entered values
+            cell = cell_combo.currentText()  # Only get from combo box
             tissue = tissue_input.toPlainText() or tissue_combo.currentText()
-            cell = cell_input.toPlainText() or cell_combo.currentText()
             antibody = antibody_input.toPlainText()
             additional_info = additional_input.toPlainText()
 

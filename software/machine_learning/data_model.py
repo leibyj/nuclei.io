@@ -44,7 +44,7 @@ import platform
 import traceback
 opj = os.path.join
 
-from software.machine_learning.ihc_utils_faiss import create_ihc_model, ihc_inference
+from software.machine_learning.ihc_utils_faiss import create_ihc_model, ihc_inference, array_to_base64
 
 
 class AsyncApplytoCase(QObject):
@@ -391,7 +391,10 @@ class DataModel():
                 print("IHC evaluation failed: No valid patches found")
                 return
 
-            ihc_stain_results, whole_region_embedding, similar_weblinks = result
+            ihc_stain_results, whole_region_embedding, similar_weblinks, attention_map = result
+            
+            # Convert attention map to base64
+            attention_map_b64 = array_to_base64(attention_map)
 
             # If successful, send results to frontend
             whole_region_results = {
@@ -401,7 +404,8 @@ class DataModel():
                 'staining_quantity': ihc_stain_results['staining_quantity'],
                 'tissue_type': ihc_stain_results['tissue_type'],
                 'cancerous': ihc_stain_results['malignancy'],
-                'similar_weblinks': similar_weblinks if similar_weblinks else []
+                'similar_weblinks': similar_weblinks if similar_weblinks else [],
+                'attention_map': attention_map_b64
             }
 
             dict2send = {"action": "show_IHC_evaluation_result",

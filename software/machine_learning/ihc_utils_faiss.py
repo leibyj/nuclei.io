@@ -11,6 +11,7 @@ import faiss
 import pickle
 import os
 from skimage import morphology, filters
+import cv2
 
 ################################################################################
 ##                              model code                                    ##
@@ -239,7 +240,7 @@ class CLAM_ViT(nn.Module):
 ################################################################################
 
 class SingleInferenceMILDataset(torch.utils.data.Dataset):
-    def __init__(self, image_input, cell_type="", patch_size=336, processor=None, mask_threshold=0.8):
+    def __init__(self, image_input, cell_type="", patch_size=336, processor=None, mask_threshold=0.9):
         super().__init__()
         self.patch_size = patch_size
         self.processor = processor
@@ -565,6 +566,78 @@ def ihc_inference(model, image_path, cell_type):
             intensity_out, location_out, quantity_out, region_embedding, tissue_out, malignancy_out, A_raw = model(
                 [processed_image], None, cell_type_one_hot, phase="test")
             
+            # Process attention scores
+            # Remove CLS token (first token)
+            A_raw = A_raw[:, 1:, :]  # Now shape is (N_patches, 576, 1)
+            
+            # Take softmax over patches
+            A_soft = F.softmax(A_raw.squeeze(-1), dim=0)  # Shape (N_patches, 576)
+            
+            # Calculate patch positions
+            patch_size = 336  # CLIP patch size
+            token_size = 14   # Size of each token's receptive field
+            h, w = image_path.shape[:2]
+            n_patches_h = h // patch_size + (1 if h % patch_size != 0 else 0)
+            n_patches_w = w // patch_size + (1 if w % patch_size != 0 else 0)
+            
+            # Create high-resolution attention heatmap
+            attention_map = np.zeros((h, w))
+            patch_count = 0
+            
+            for i in range(n_patches_h):
+                for j in range(n_patches_w):
+                    if patch_count >= A_soft.shape[0]:
+                        continue
+                        
+                    # Get patch boundaries
+                    patch_top = i * patch_size
+                    patch_left = j * patch_size
+                    
+                    # Process each token within the patch
+                    for token_idx in range(576):  # 24x24 grid of tokens
+                        # Convert token index to position within patch
+                        token_i = token_idx // 24  # 24 tokens per row
+                        token_j = token_idx % 24   # 24 tokens per column
+                        
+                        # Calculate token boundaries
+                        token_top = patch_top + token_i * token_size
+                        token_left = patch_left + token_j * token_size
+                        token_bottom = min(token_top + token_size, h)
+                        token_right = min(token_left + token_size, w)
+                        
+                        # Get attention score for this token
+                        token_attention = A_soft[patch_count, token_idx].cpu().numpy()
+                        
+                        # Fill the attention map at token resolution
+                        attention_map[token_top:token_bottom, token_left:token_right] = token_attention
+                    
+                    patch_count += 1
+            
+            # Normalize attention map
+            attention_map = (attention_map - attention_map.min()) / (attention_map.max() - attention_map.min())
+            
+            # Apply Gaussian blur to smooth out the blocky appearance
+            # Adjust kernel size (15,15) and sigma (5) to control smoothness
+            attention_map = cv2.GaussianBlur(attention_map, (15,15), 5)
+            
+            # Create visualization (e.g., heatmap overlay)
+            heatmap = (attention_map * 255).astype(np.uint8)
+            heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+            
+            # Ensure original image is in BGR format and same size as heatmap
+            original_bgr = cv2.cvtColor(image_path, cv2.COLOR_RGB2BGR)
+            
+            # Resize heatmap if needed
+            if heatmap.shape != original_bgr.shape:
+                heatmap = cv2.resize(heatmap, (original_bgr.shape[1], original_bgr.shape[0]))
+            
+            # Blend with original image
+            alpha = 0.3  # Reduced from 0.5 to make it more transparent
+            overlay = cv2.addWeighted(original_bgr, 1-alpha, heatmap, alpha, 0)
+            
+            # Convert back to RGB for display
+            overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
+
             # Load FAISS database
             # faiss_dir = os.path.dirname(checkpoint_weights_path)
             faiss_dir = '/Users/jacobleiby/Desktop/ihc_faiss'
@@ -583,4 +656,22 @@ def ihc_inference(model, image_path, cell_type):
                 print("FAISS database not found, skipping similarity search")
                 similar_images = []
         
-        return prediction_summary(intensity_out, location_out, quantity_out, tissue_out, malignancy_out), region_embedding, similar_images
+        return prediction_summary(intensity_out, location_out, quantity_out, tissue_out, malignancy_out), region_embedding, similar_images, overlay
+
+def array_to_base64(img_array):
+    """Convert a numpy array to base64 string."""
+    import base64
+    from io import BytesIO
+    from PIL import Image
+    
+    # Convert numpy array to PIL Image
+    img = Image.fromarray(img_array)
+    
+    # Save image to BytesIO buffer
+    buffer = BytesIO()
+    img.save(buffer, format='PNG')
+    
+    # Encode as base64 string
+    img_str = base64.b64encode(buffer.getvalue()).decode()
+    
+    return f'data:image/png;base64,{img_str}'
